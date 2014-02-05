@@ -3,8 +3,7 @@ import re
 import urllib2
 import sys
 import threading
-import time
-
+from time import sleep
 
 POLLING_INTERVAL = 20
 ERROR_SLEEP_TIME = 60
@@ -36,13 +35,11 @@ class SingleGameTracker(threading.Thread):
                                 'echess/download_pgn?id=%d' % self._game_id)
             except:
                 print 'failed to read game data from chess.com :('
-                time.sleep(ERROR_SLEEP_TIME)
+                sleep(ERROR_SLEEP_TIME)
                 continue
 
             game = pgn.loads(text)[0]
-            moves = game.moves[:]
-            if moves and moves[-1] == '*':
-                moves.pop()
+            moves = self._trim_moves(game.moves)
             num_moves = len(moves)
 
             is_first_report = last_moves is None
@@ -53,23 +50,27 @@ class SingleGameTracker(threading.Thread):
                                                                   num_moves,)
                 should_continue = False
             elif moves and moves != last_moves:
-                msg_end = '%2d. %s%s' % (
-                    1 + num_moves//2,
-                    '' if num_moves % 2 == 1 else '...',
-                    moves[-1],
-                )
+                msg_end = '%2d. %s%s' % (1 + num_moves // 2,
+                                         '' if num_moves % 2 == 1 else '...',
+                                         moves[-1],)
             last_moves = moves[:]
 
             if msg_end and not is_first_report:
                 with PRINT_LOCK:
-                    sys.stdout.write(
-                        '%25s | %-16s  (%s)\n' % (
+                    sys.stdout.write('%25s | %-16s  (%s)\n' % (
                             '%s vs. %s' % (game.white, game.black),
                             msg_end,
                             CHESS_COM + 'echess/game?id=%d' % self._game_id))
                     sys.stdout.flush()
 
-            time.sleep(POLLING_INTERVAL)
+            sleep(POLLING_INTERVAL)
+
+    @staticmethod
+    def _trim_moves(moves):
+        moves = moves[:]
+        if moves and moves[-1] == '*':
+            moves.pop()
+        return moves
 
 
 class TrackingManager(object):
@@ -85,14 +86,15 @@ class TrackingManager(object):
                 cur_game_ids = self._read_game_ids()
             except:
                 print 'failed to fetch game ids from chess.com :('
-                time.sleep(ERROR_SLEEP_TIME)
+                sleep(ERROR_SLEEP_TIME)
                 continue
 
             for id_ in cur_game_ids:
                 if not id_ in tracked_games:
-                    SingleGameTracker(id_).start()
+                    tracker = SingleGameTracker(id_)
+                    tracker.start()
                     tracked_games.add(id_)
-            time.sleep(POLLING_INTERVAL)
+            sleep(POLLING_INTERVAL)
 
     def _read_game_ids(self):
         res = set()
@@ -111,8 +113,8 @@ def main(argv):
         print 'usage: python %s <user_1> <user_2> ... <user_n>' % argv[0]
         sys.exit(1)
 
-    print 'tracking all games for users %s...' % ' '.join(users)
-    TrackingManager(users).run()
+    manager = TrackingManager(users)
+    manager.run()
 
 
 if __name__ == '__main__':
