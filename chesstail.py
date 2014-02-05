@@ -27,9 +27,10 @@ class SingleGameTracker(threading.Thread):
         self._game_id = game_id
 
     def run(self):
+        should_continue = True
         last_moves = None
 
-        while True:
+        while should_continue:
             try:
                 text = read_url(CHESS_COM +
                                 'echess/download_pgn?id=%d' % self._game_id)
@@ -50,15 +51,14 @@ class SingleGameTracker(threading.Thread):
             if game.result in ['1-0', '0-1', '1/2-1/2']:
                 msg_end = 'ended with score %s after %d moves' % (game.result,
                                                                   num_moves,)
-                return
-            else:
-                if moves and moves != last_moves:
-                    msg_end = '%2d. %s%s' % (
-                        1 + num_moves//2,
-                        '' if num_moves % 2 == 1 else '...',
-                        moves[-1],
-                    )
-                last_moves = moves[:]
+                should_continue = False
+            elif moves and moves != last_moves:
+                msg_end = '%2d. %s%s' % (
+                    1 + num_moves//2,
+                    '' if num_moves % 2 == 1 else '...',
+                    moves[-1],
+                )
+            last_moves = moves[:]
 
             if msg_end and not is_first_report:
                 with PRINT_LOCK:
