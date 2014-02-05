@@ -1,20 +1,22 @@
 import pgn
 import re
-import requests
+import urllib2
 import sys
 import threading
 import time
 
 
-POLLING_INTERVAL = 30
+POLLING_INTERVAL = 20
 ERROR_SLEEP_TIME = 60
 CHESS_COM = 'http://www.chess.com/'
 PRINT_LOCK = threading.Lock()
 
 
 def read_url(url):
-    r = requests.get(url)
-    return r.text
+    x = urllib2.urlopen(url)
+    text = x.read()
+    x.close()
+    return text
 
 
 class SingleGameTracker(threading.Thread):
@@ -42,27 +44,23 @@ class SingleGameTracker(threading.Thread):
                 moves.pop()
             num_moves = len(moves)
 
+            is_first_report = last_moves is None
             msg_end = None
 
-            if game.result == '1-0':
-                msg_end = 'ended with score 1-0 after %d moves' % num_moves
-                return
-            elif game.result == '0-1':
-                msg_end = 'ended with score 0-1 after %d moves' % num_moves
-                return
-            elif game.result == '1/2-1/2':
-                msg_end = 'ended with score 1/2-1/2 after %d moves' % num_moves
+            if game.result in ['1-0', '0-1', '1/2-1/2']:
+                msg_end = 'ended with score %s after %d moves' % (game.result,
+                                                                  num_moves,)
                 return
             else:
                 if moves and moves != last_moves:
                     msg_end = '%2d. %s%s' % (
-                        num_moves // 2,
+                        1 + num_moves//2,
                         '' if num_moves % 2 == 1 else '...',
                         moves[-1],
                     )
                 last_moves = moves[:]
 
-            if msg_end:
+            if msg_end and not is_first_report:
                 with PRINT_LOCK:
                     sys.stdout.write(
                         '%25s | %-16s  (%s)\n' % (
