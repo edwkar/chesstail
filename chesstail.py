@@ -42,7 +42,6 @@ class SingleGameTracker(threading.Thread):
             moves = self._trim_moves(game.moves)
             num_moves = len(moves)
 
-            is_first_report = last_moves is None
             msg_end = None
 
             if game.result in ['1-0', '0-1', '1/2-1/2']:
@@ -55,7 +54,7 @@ class SingleGameTracker(threading.Thread):
                                          moves[-1],)
             last_moves = moves[:]
 
-            if msg_end and not is_first_report:
+            if msg_end:
                 with PRINT_LOCK:
                     sys.stdout.write('%25s | %-16s  (%s)\n' % (
                             '%s vs. %s' % (game.white, game.black),
