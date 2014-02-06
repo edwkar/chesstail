@@ -1,67 +1,74 @@
-#! /usr/bin/env python
-#
-# (this is (more or less) irccat from irclib python library.)
-
+import Queue
+import socket
 import sys
-import argparse
-import itertools
+import threading
+import time
 
-import irc.client
-import irc.logging
 
-target = None
-"The nick or channel to which to send messages"
+PONG_INTERVAL = 40
 
-def on_connect(connection, event):
-    if irc.client.is_channel(target):
-        connection.join(target)
-        return
-    main_loop(connection)
 
-def on_join(connection, event):
-    main_loop(connection)
+class StdinReader(threading.Thread):
+    def __init__(self):
+        super(StdinReader, self).__init__()
+        self._queue = Queue.Queue()
 
-def get_lines():
-    while True:
-        yield sys.stdin.readline().rstrip()
+    def run(self):
+        while True:
+            line = sys.stdin.readline()
+            self._queue.put(line)
 
-def main_loop(connection):
-    for line in itertools.takewhile(bool, get_lines()):
-        print(line)
-        connection.privmsg(target, line)
-    connection.quit("Using irc.client.py")
+    def readline(self, timeout):
+        return self._queue.get(timeout)
 
-def on_disconnect(connection, event):
-    raise SystemExit()
 
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('server')
-    parser.add_argument('nickname')
-    parser.add_argument('target', help="a nickname or channel")
-    parser.add_argument('-p', '--port', default=6667, type=int)
-    irc.logging.add_arguments(parser)
-    return parser.parse_args()
+class IRCCatBot(object):
+    def __init__(self, server_addr, server_port, chan, nick, reader):
+        self._server_addr = server_addr
+        self._server_port = server_port
+        self._chan = chan
+        self._nick = nick
+        self._reader = reader
 
-def main():
-    global target
+    def run(self):
+        s = socket.create_connection((self._server_addr, self._server_port,),
+                                     timeout=1)
 
-    args = get_args()
-    irc.logging.setup(args)
-    target = args.target
+        n = self._nick
+        s.send('USER %s %s %s :%s\n' % (n, n, n, n,))
+        s.send('NICK %s\n' % n)
+        s.send('JOIN %s\n' % self._chan)
 
-    client = irc.client.IRC()
+        last_pong_time = 0
+
+        while True:
+            t_now = int(time.time())
+
+            if t_now - last_pong_time > PONG_INTERVAL:
+                print '-* pong *-'
+                s.send('PONG %s\n' % self._server_addr)
+                last_pong_time = t_now
+
+            line = self._reader.readline(timeout=1)
+            if line:
+                print line
+                s.send('PRIVMSG %s :%s' % (self._chan, line,))
+
+            time.sleep(0.1)
+
+
+def main(argv):
+    reader = StdinReader()
+    reader.daemon = True
+    reader.start()
+
     try:
-        c = client.server().connect(args.server, args.port, args.nickname)
-    except irc.client.ServerConnectionError:
-        print(sys.exc_info()[1])
-        raise SystemExit(1)
+        bot = IRCCatBot(*(argv[1:] + [reader]))
+        bot.run()
+    except KeyboardInterrupt:
+        print 'got interrupt signal from user, exiting...'
+        sys.exit(0)
 
-    c.add_global_handler("welcome", on_connect)
-    c.add_global_handler("join", on_join)
-    c.add_global_handler("disconnect", on_disconnect)
-
-    client.process_forever()
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv)
