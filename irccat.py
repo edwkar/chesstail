@@ -5,7 +5,7 @@ import threading
 import time
 
 
-PONG_INTERVAL = 40
+PONG_INTERVAL = 60
 
 
 class StdinReader(threading.Thread):
@@ -15,7 +15,14 @@ class StdinReader(threading.Thread):
 
     def run(self):
         while True:
-            line = sys.stdin.readline()
+            try:
+                line = sys.stdin.readline()
+            except Exception as e:
+                print ('exception raised in reading thread, sleeping and ' +
+                       're-trying...')
+                print e
+                time.sleep(1)
+                continue
             self._queue.put(line)
 
     def readline(self, timeout):
@@ -56,6 +63,16 @@ class IRCCatBot(object):
 
             time.sleep(0.1)
 
+    def rerun(self):
+        while True:
+            try:
+                self.run()
+            except Exception as e:
+                print ('exception raised in bot thread, sleeping and ' +
+                       're-starting...')
+                print e
+                time.sleep(120)
+
 
 def main(argv):
     reader = StdinReader()
@@ -64,7 +81,7 @@ def main(argv):
 
     try:
         bot = IRCCatBot(*(argv[1:] + [reader]))
-        bot.run()
+        bot.rerun()
     except KeyboardInterrupt:
         print 'got interrupt signal from user, exiting...'
         sys.exit(0)
