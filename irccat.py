@@ -21,12 +21,15 @@ class StdinReader(threading.Thread):
                 print ('exception raised in reading thread, sleeping and ' +
                        're-trying...')
                 print e
-                time.sleep(1)
+                time.sleep(0.5)
                 continue
             self._queue.put(line)
 
-    def readline(self, timeout):
-        return self._queue.get(timeout)
+    def readline(self):
+        try:
+            return self._queue.get(False)
+        except Queue.Empty:
+            return None
 
 
 class IRCCatBot(object):
@@ -38,27 +41,28 @@ class IRCCatBot(object):
         self._reader = reader
 
     def run(self):
-        s = socket.create_connection((self._server_addr, self._server_port,),
-                                     timeout=1)
+        s = socket.create_connection((self._server_addr, self._server_port,),)
 
         n = self._nick
         s.send('USER %s %s %s :%s\n' % (n, n, n, n,))
         s.send('NICK %s\n' % n)
         s.send('JOIN %s\n' % self._chan)
 
-        last_pong_time = 0
-
         while True:
-            t_now = int(time.time())
+            s.settimeout(0.01)
+            irc_line = ''
+            try:
+                irc_line = s.recv(512).strip()
+            except socket.timeout:
+                pass
+            if irc_line and irc_line.startswith('PING'):
+                response = irc_line.strip().split(' ')[1]
+                s.send('PONG %s\n' % response)
+            s.settimeout(10)
 
-            if t_now - last_pong_time > PONG_INTERVAL:
-                print '-* pong *-'
-                s.send('PONG %s\n' % self._server_addr)
-                last_pong_time = t_now
-
-            line = self._reader.readline(timeout=1)
-            if line:
-                print line
+            line = self._reader.readline()
+            if line and line.strip():
+                print '"%s"' % line
                 s.send('PRIVMSG %s :%s' % (self._chan, line,))
 
             time.sleep(0.1)
@@ -71,7 +75,8 @@ class IRCCatBot(object):
                 print ('exception raised in bot thread, sleeping and ' +
                        're-starting...')
                 print e
-                time.sleep(120)
+                print type(e)
+                time.sleep(60)
 
 
 def main(argv):

@@ -4,9 +4,13 @@ import urllib2
 import sys
 import threading
 from time import sleep
+from datetime import datetime
+
+def debug_log(msg):
+    sys.stderr.write('%s: %s\n' % (datetime.now(), msg,))
 
 POLLING_INTERVAL = 20
-ERROR_SLEEP_TIME = 60
+ERROR_SLEEP_TIME = 80
 CHESS_COM = 'http://www.chess.com/'
 PRINT_LOCK = threading.Lock()
 
@@ -29,18 +33,29 @@ class SingleGameTracker(threading.Thread):
         should_continue = True
         last_moves = None
 
+        iteration = -1
         while should_continue:
+            iteration += 1
+
             try:
                 text = read_url(CHESS_COM +
                                 'echess/download_pgn?id=%d' % self._game_id)
-            except:
-                print 'failed to read game data from chess.com :('
+            except Exception as e:
+                debug_log('ERROR: failed to read game data from chess.com :(')
+                #print e
+                #print type(e)
                 sleep(ERROR_SLEEP_TIME)
                 continue
 
             game = pgn.loads(text)[0]
             moves = self._trim_moves(game.moves)
             num_moves = len(moves)
+
+            if iteration == 0:
+                debug_log('started tracking game %d between %s and %s' % (
+                          self._game_id,
+                          game.white,
+                          game.black,))
 
             msg_end = None
 
@@ -49,17 +64,16 @@ class SingleGameTracker(threading.Thread):
                                                                   num_moves,)
                 should_continue = False
             elif moves and moves != last_moves:
-                msg_end = '%2d. %s%s' % (1 + num_moves // 2,
+                msg_end = '%2d. %s%s' % (1 + (num_moves-1) // 2,
                                          '' if num_moves % 2 == 1 else '...',
                                          moves[-1],)
             last_moves = moves[:]
 
-            if msg_end:
+            if msg_end and iteration != 0:
                 with PRINT_LOCK:
-                    sys.stdout.write('%25s | %-16s  (%s)\n' % (
+                    sys.stdout.write('%25s | %-16s\n' % (
                             '%s vs. %s' % (game.white, game.black),
-                            msg_end,
-                            CHESS_COM + 'echess/game?id=%d' % self._game_id))
+                            msg_end,))
                     sys.stdout.flush()
 
             sleep(POLLING_INTERVAL)
@@ -84,12 +98,13 @@ class TrackingManager(object):
             try:
                 cur_game_ids = self._read_game_ids()
             except:
-                print 'failed to fetch game ids from chess.com :('
+                debug_log('ERROR. failed to fetch game ids from chess.com :(')
                 sleep(ERROR_SLEEP_TIME)
                 continue
 
             for id_ in cur_game_ids:
                 if not id_ in tracked_games:
+                    debug_log('preparing to track game %d...' % id_)
                     tracker = SingleGameTracker(id_)
                     tracker.start()
                     tracked_games.add(id_)
@@ -107,6 +122,7 @@ class TrackingManager(object):
 
 
 def main(argv):
+    debug_log('yo')
     users = argv[1:]
     if not users:
         print 'usage: python %s <user_1> <user_2> ... <user_n>' % argv[0]
