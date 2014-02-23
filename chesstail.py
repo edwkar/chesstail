@@ -122,7 +122,6 @@ class TrackingManager(object):
 
 
 def main(argv):
-    debug_log('yo')
     users = argv[1:]
     if not users:
         print 'usage: python %s <user_1> <user_2> ... <user_n>' % argv[0]
